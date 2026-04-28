@@ -1,0 +1,29 @@
+# Secrets — JAMAIS commit
+.env
+.env.*
+!.env.example
+secrets/*.key
+secrets/*.txt
+secrets/!*.enc
+*.pem
+*.key
+
+# Volumes Docker locaux
+volumes/
+data/
+
+# Backups
+backup/restic-cache/
+backup/staging/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

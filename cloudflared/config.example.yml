@@ -1,0 +1,22 @@
+# Cloudflare Tunnel — config template
+#
+# Comment l'utiliser :
+# 1. Crée un tunnel : `cloudflared tunnel create marc-hub`
+# 2. Récupère son ID + le credentials JSON dans ~/.cloudflared/<UUID>.json
+# 3. Copie ce fichier en cloudflared/config.yml
+# 4. Remplace <UUID> et le hostname
+# 5. Ajoute la route DNS : `cloudflared tunnel route dns marc-hub marc-hub.duckdns.org`
+#    (NB: pour DuckDNS sans Cloudflare DNS, on utilise un domaine que Cloudflare gère.
+#     Si pas de domaine sur Cloudflare, on s'appuie sur l'URL trycloudflare.com auto-générée.)
+# 6. `cloudflared tunnel run marc-hub`
+
+tunnel: <UUID-DU-TUNNEL>
+credentials-file: C:\Users\marcr\.cloudflared\<UUID-DU-TUNNEL>.json
+
+ingress:
+  # Route principale → hub via Caddy
+  - hostname: marc-hub.duckdns.org
+    service: http://localhost:80
+
+  # Catch-all (obligatoire en dernière position)
+  - service: http_status:404

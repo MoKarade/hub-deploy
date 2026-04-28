@@ -1,0 +1,52 @@
+###
+# Caddy reverse proxy — Personal Data Hub
+#
+# Routing :
+#   /              → hub-frontend (Next.js, port 3000) [Phase 1+]
+#   /api/*         → hub-core (FastAPI, port 8000)
+#   /apps/.../v*/* → conteneur de l'app à la version voulue [Phase 2+]
+###
+
+# En local : http://localhost
+# En prod via tunnel Cloudflare : https://marc-hub.duckdns.org
+
+:80 {
+    # API backend
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy hub-core:8000
+    }
+
+    # Docs OpenAPI
+    handle /docs {
+        reverse_proxy hub-core:8000
+    }
+    handle /openapi.json {
+        reverse_proxy hub-core:8000
+    }
+
+    # Apps versionnées (Phase 2+)
+    # Exemple: /apps/finance/v1/ → app-finance:8001 (v1)
+    #          /apps/finance/v2/ → app-finance:8002 (v2)
+    # @app_finance_v1 path /apps/finance/v1/*
+    # handle @app_finance_v1 {
+    #     uri strip_prefix /apps/finance/v1
+    #     reverse_proxy app-finance-v1:8001
+    # }
+
+    # Frontend (Phase 1+) — fallback sur tout le reste
+    # handle {
+    #     reverse_proxy hub-frontend:3000
+    # }
+
+    # Pour Phase 0 (avant le frontend), on renvoie sur l'API
+    handle {
+        reverse_proxy hub-core:8000
+    }
+
+    # Logs structurés
+    log {
+        output stdout
+        format json
+    }
+}
