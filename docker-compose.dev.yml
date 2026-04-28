@@ -60,12 +60,45 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
+    # Bind mount du code source pour avoir hot-reload en dev sans rebuild de l'image.
+    # Permet de coder/itérer rapidement : on modifie un .py côté Windows, uvicorn redémarre tout seul.
+    volumes:
+      - ../hub-core/src:/app/src
+      - ../hub-core/alembic:/app/alembic
+      - ../hub-core/alembic.ini:/app/alembic.ini
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  hub-ingest:
+    # Worker d'ingestion. En dev on le demarre a la demande via :
+    #   docker compose -f docker-compose.dev.yml run --rm hub-ingest
+    # ce qui execute la pipeline run-once puis exit.
+    build:
+      context: ../hub-ingest
+      dockerfile: Dockerfile
+    profiles: ["ingest"]  # exclu du `compose up` par defaut, lance a la demande
+    depends_on:
+      hub-core:
+        condition: service_healthy
+    environment:
+      RUN_MODE: ${INGEST_RUN_MODE:-run-once}
+      HUB_API_BASE_URL: http://hub-core:8000
+      RAW_EVENTS_DIR: /var/hub/raw_events
+      INBOX_DIR: /var/hub/inbox
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      NTFY_TOPIC_URL: ${NTFY_TOPIC_URL:-}
+    volumes:
+      # Code source en bind mount pour iterer sans rebuild
+      - ../hub-ingest/src:/app/src
+      # Inbox locale (Marc depose ses CSV/PDF ici, c'est C:\hub\inbox cote Windows)
+      - ../inbox:/var/hub/inbox
+      # Raw events persistes (event sourcing) -> C:\hub\raw_events cote Windows
+      - ../raw_events:/var/hub/raw_events
 
 volumes:
   postgres_data:
