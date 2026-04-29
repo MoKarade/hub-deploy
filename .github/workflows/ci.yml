@@ -1,0 +1,47 @@
+name: hub-deploy CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose
+        run: |
+          # docker compose config valide la syntaxe + les references
+          docker compose -f docker-compose.dev.yml config > /dev/null
+
+      - name: Lint Caddyfile
+        run: |
+          docker run --rm -v "$PWD/caddy:/etc/caddy" caddy:2-alpine \
+            caddy validate --config /etc/caddy/Caddyfile
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install pyyaml
+        run: pip install pyyaml
+      - name: Validate yaml files
+        run: |
+          # Sanity check : tous les yaml du repo sont parsables.
+          # On utilise python3 explicitement (Ubuntu runner ne fournit pas `python` par défaut).
+          for f in $(find . -name '*.yml' -o -name '*.yaml' | grep -v '.github/'); do
+            python3 -c "import yaml; yaml.safe_load(open('$f'))" || (echo "Invalid: $f" && exit 1)
+          done
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck on .sh files
+        run: |
+          if find . -name '*.sh' | grep -q .; then
+            sudo apt-get install -y shellcheck
+            find . -name '*.sh' -print0 | xargs -0 shellcheck
+          fi

@@ -1,0 +1,21 @@
+# restic config — Personal Data Hub
+#
+# Note : restic n'utilise pas un fichier de config TOML par défaut, mais des
+# variables d'environnement. Ce fichier sert de référence documentée des
+# valeurs utilisées par les scripts.
+#
+# Les vraies valeurs vivent dans secrets/restic.enc.yaml (chiffré avec sops/age).
+
+# Repo restic — backend rclone vers OneDrive
+RESTIC_REPOSITORY = "rclone:onedrive:backups/hub"
+
+# Mot de passe restic (32 chars hex random)
+RESTIC_PASSWORD = "REPLACE_WITH_32_CHAR_RANDOM"
+
+# Cache local restic (évite re-télécharger les metadata à chaque run)
+RESTIC_CACHE_DIR = "C:\\hub\\hub-deploy\\backup\\restic-cache"
+
+# Politique de rétention (consommée par scripts/backup.ps1 forget)
+KEEP_DAILY = 7
+KEEP_WEEKLY = 4
+KEEP_MONTHLY = 12

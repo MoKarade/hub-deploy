@@ -1,0 +1,16 @@
+# sops configuration — Personal Data Hub
+#
+# Tous les fichiers `secrets/*.enc.yaml` sont chiffrés avec la clé age publique
+# de Marc. La clé privée vit uniquement sur les 2 clés USB physiques (cf. ADR-0006).
+#
+# Pour ajouter une nouvelle paire age (ex: si tu changes de PC ou ajoutes un
+# membre du foyer), ajoute sa pubkey ci-dessous puis re-chiffre :
+#   sops updatekeys secrets/postgres.enc.yaml
+
+creation_rules:
+  - path_regex: secrets/.*\.enc\.yaml$
+    age: >-
+      REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+    # Format de la clé : `age1...` obtenu via `age-keygen -y ~/.age/hub.key`.
+    # Si tu colles ici une vraie clé, c'est OK : la pubkey est volontairement
+    # publique. Seule la privée doit rester secrète.

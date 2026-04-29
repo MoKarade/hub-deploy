@@ -1,22 +1,37 @@
-# Cloudflare Tunnel — config template
+# Configuration Cloudflared — Personal Data Hub
 #
-# Comment l'utiliser :
-# 1. Crée un tunnel : `cloudflared tunnel create marc-hub`
-# 2. Récupère son ID + le credentials JSON dans ~/.cloudflared/<UUID>.json
-# 3. Copie ce fichier en cloudflared/config.yml
-# 4. Remplace <UUID> et le hostname
-# 5. Ajoute la route DNS : `cloudflared tunnel route dns marc-hub marc-hub.duckdns.org`
-#    (NB: pour DuckDNS sans Cloudflare DNS, on utilise un domaine que Cloudflare gère.
-#     Si pas de domaine sur Cloudflare, on s'appuie sur l'URL trycloudflare.com auto-générée.)
-# 6. `cloudflared tunnel run marc-hub`
+# Mode 1 (recommandé en docker compose prod) : on n'utilise PAS ce fichier.
+# Le tunnel est configuré via le dashboard Cloudflare Zero Trust + un TOKEN
+# passé au conteneur cloudflared via la variable d'env CLOUDFLARE_TUNNEL_TOKEN.
+# Voir cloudflared/README.md pour les étapes.
+#
+# Mode 2 (standalone, sans docker) : copie ce fichier vers config.yml et édite
+#   `cp config.example.yml ~/.cloudflared/config.yml`
+#   `cloudflared tunnel --config ~/.cloudflared/config.yml run`
 
-tunnel: <UUID-DU-TUNNEL>
-credentials-file: C:\Users\marcr\.cloudflared\<UUID-DU-TUNNEL>.json
+# UUID du tunnel (généré par `cloudflared tunnel create marc-hub`)
+tunnel: REPLACE_WITH_TUNNEL_UUID
 
+# Chemin vers le credentials JSON (créé au login)
+# Sur Windows : C:\Users\<user>\.cloudflared\<UUID>.json
+credentials-file: REPLACE_WITH_PATH_TO_CREDENTIALS_JSON
+
+# Routes ingress :
+#   La 1re règle qui match wins. Toujours finir par `service: http_status:404`.
 ingress:
-  # Route principale → hub via Caddy
+  # Frontend + API (passe par Caddy en interne)
   - hostname: marc-hub.duckdns.org
     service: http://localhost:80
+    originRequest:
+      # Tolère les longs prompts IA (timeout par défaut Cloudflare = 100s)
+      connectTimeout: 30s
+      noTLSVerify: true   # caddy:80 est en HTTP local, pas de cert à vérifier
+      httpHostHeader: marc-hub.duckdns.org
 
-  # Catch-all (obligatoire en dernière position)
+  # Optionnel : sous-domaine pour les apps versionnées (si on switch un jour
+  # de sous-chemin vers sous-domaine — cf. ADR-0007).
+  # - hostname: app-finance-v1.marc-hub.duckdns.org
+  #   service: http://localhost:80
+
+  # 404 par défaut — règle obligatoire en fin
   - service: http_status:404

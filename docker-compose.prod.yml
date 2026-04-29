@@ -1,0 +1,129 @@
+name: hub-prod
+
+# Stack production du Personal Data Hub.
+#
+# Différences vs dev :
+#   - Pas de bind mount du code source (build une fois, run l'image)
+#   - Pas de --reload uvicorn (uvicorn standard, multi-worker)
+#   - Caddy en frontend (HTTPS + routing /api, /apps/v* etc.)
+#   - cloudflared pour le tunnel sortant vers Internet
+#   - hub-frontend buildé et servi par Next.js standalone
+#   - Postgres NE BIND PAS sur l'hôte (uniquement réseau interne)
+#
+# Lance avec :
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:-hubdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Pas de `ports:` en prod — uniquement réseau interne Docker.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hub} -d ${POSTGRES_DB:-hubdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  hub-core:
+    build:
+      context: ../hub-core
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: prod
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-hub}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hubdb}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:14b-instruct}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      SECRET_KEY: ${SECRET_KEY:?required}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://marc-hub.duckdns.org}
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN:-}
+      CF_ACCESS_AUDIENCE: ${CF_ACCESS_AUDIENCE:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Pas de port exposé — Caddy gère le routage en amont.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  hub-frontend:
+    build:
+      context: ../hub-frontend
+      dockerfile: Dockerfile
+      args:
+        # En prod, le frontend appelle /api (réécrit par Caddy)
+        NEXT_PUBLIC_HUB_API_URL: /api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_HUB_API_URL: /api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      hub-core:
+        condition: service_healthy
+      hub-frontend:
+        condition: service_healthy
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # Caddy gère TLS pour les requêtes HTTP cloudflared → caddy en interne.
+    # Le tunnel termine TLS chez Cloudflare, caddy n'a pas à se soucier des certs externes.
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    depends_on:
+      caddy:
+        condition: service_started
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?required}
+    # Le tunnel forward vers caddy:80 selon la config définie côté dashboard
+    # Cloudflare Zero Trust > Networks > Tunnels.
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+# Réseau explicite — tous les services y sont attachés par défaut. Documente
+# que cloudflared et caddy DOIVENT être sur le même réseau pour que cloudflared
+# résolve `caddy:80` (configuré côté Cloudflare Zero Trust dashboard).
+networks:
+  default:
+    name: hub_prod
+    driver: bridge
