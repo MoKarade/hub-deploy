@@ -19,7 +19,11 @@ param(
     [string]$Mode = "quick",
 
     [ValidateSet("frontend", "backend")]
-    [string]$Target = "frontend"
+    [string]$Target = "frontend",
+
+    # Flag explicite requis pour exposer le backend (hub-core API) en quick mode.
+    # Sans Cloudflare Access, c'est l'API entiere accessible publiquement -> dangereux.
+    [switch]$IUnderstandThisIsPublic
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,6 +45,19 @@ Write-Host "  ================================================" -ForegroundColor
 Write-Host ""
 
 if ($Mode -eq "quick") {
+    # Garde-fou: exposer le backend en quick mode = API publique sans auth
+    if ($Target -eq "backend" -and -not $IUnderstandThisIsPublic) {
+        Write-Host ""
+        Write-Host "  REFUSE: -Target backend en mode quick exposerait /v1/* publiquement" -ForegroundColor Red
+        Write-Host "  Tous les endpoints (oauth, finance, locations, ai/ask) deviendraient accessibles sans auth." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "  Si tu veux vraiment, ajoute le flag explicite:" -ForegroundColor Yellow
+        Write-Host "    .\scripts\start-tunnel.ps1 -Mode quick -Target backend -IUnderstandThisIsPublic" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Mieux: setup Mode named + Cloudflare Access (auth Google obligatoire)." -ForegroundColor White
+        Write-Host "  Voir docs/CLOUDFLARE-TUNNEL.md" -ForegroundColor White
+        exit 1
+    }
     $port = if ($Target -eq "backend") { 8000 } else { 3000 }
     $localUrl = "http://localhost:$port"
 
