@@ -37,14 +37,24 @@ if (Test-Path $nextCache) {
     Write-Host "  [OK] Cache .next/ wipe" -ForegroundColor Green
 }
 
-# Restart
+# Build prod + start (mode prod = stable)
 $nextCmd = "$frontendDir\node_modules\.bin\next.cmd"
 if (-not (Test-Path $nextCmd)) {
     Write-Host "  [X] node_modules manquant - lance npm install --legacy-peer-deps" -ForegroundColor Red
     exit 1
 }
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$nextCmd`"", "dev" -WorkingDirectory $frontendDir -WindowStyle Hidden
-Write-Host "  [OK] Dev server demarrant (recompile ~10s)..." -ForegroundColor Green
+
+Write-Host "  Build prod (~15-25s)..." -ForegroundColor Yellow
+Push-Location $frontendDir
+& cmd /c "$nextCmd" build 2>&1 | Out-Null
+$buildExit = $LASTEXITCODE
+Pop-Location
+if ($buildExit -ne 0) {
+    Write-Host "  [X] Build echoue, check 'cd $frontendDir; npm run build'" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  [OK] Build ok, demarrage serveur..." -ForegroundColor Green
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$nextCmd`"", "start" -WorkingDirectory $frontendDir -WindowStyle Hidden
 Write-Host ""
 
 # Wait for ready

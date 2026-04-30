@@ -115,28 +115,56 @@ if (-not $frontendUp) {
     }
 
     if ($frontendDir) {
-        # TOUJOURS wipe .next/ avant demarrage. Coute ~10s de recompile initial
-        # mais evite tous les bugs "Cannot find module './XXX.js'" (chunks orphelins
-        # apres modifs de composants). C'est plus robuste que detecter au cas par cas.
-        $nextCache = Join-Path $frontendDir ".next"
-        if (Test-Path $nextCache) {
-            Write-Host "  Nettoyage cache .next/ (evite chunks orphelins)..." -ForegroundColor DarkGray
-            Remove-Item -Path $nextCache -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        Write-Host "  Demarrage frontend depuis $frontendDir..." -ForegroundColor Yellow
+        # MODE PROD (next build + next start) au lieu de next dev:
+        #  + 100% stable (pas de hot-reload = pas de chunks orphelins)
+        #  + Plus rapide au runtime (build optimise une fois)
+        #  - Plus lent au 1er launch apres modif (~20s build) mais OK
+        #  - Pas de hot-reload (Marc utilise l app, ne develppe pas dessus)
+        #
+        # Detection: si .next/BUILD_ID existe et plus recent que les fichiers
+        # source, pas besoin de re-build. Sinon, build avant de start.
 
-        # Use next.cmd (Windows wrapper) via cmd.exe — direct node call doesn't work
         $nextCmd = "$frontendDir\node_modules\.bin\next.cmd"
         if (-not (Test-Path $nextCmd)) {
-            Write-Host "  [X] node_modules manquant dans $frontendDir." -ForegroundColor Red
-            Write-Host "      Lance d'abord: cd $frontendDir; npm install --legacy-peer-deps" -ForegroundColor Yellow
+            Write-Host "  [X] node_modules manquant. Lance: cd $frontendDir; npm install --legacy-peer-deps" -ForegroundColor Red
             exit 1
         }
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$nextCmd`"", "dev" -WorkingDirectory $frontendDir -WindowStyle Hidden
 
-        Write-Host "  Attente du frontend (compilation initiale ~10-20s)..." -ForegroundColor Yellow
-        if (Wait-ForUrl "http://localhost:3000" 30 2) {
-            Write-Host "  [OK] Frontend ready" -ForegroundColor Green
+        $buildIdFile = "$frontendDir\.next\BUILD_ID"
+        $needsBuild = $true
+        if (Test-Path $buildIdFile) {
+            # Verifier si build plus recent que les sources
+            $buildTime = (Get-Item $buildIdFile).LastWriteTime
+            $latestSrc = Get-ChildItem -Path "$frontendDir\app", "$frontendDir\components", "$frontendDir\lib" `
+                -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Extension -in @('.tsx','.ts','.js','.jsx','.css') } |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($latestSrc -and $latestSrc.LastWriteTime -le $buildTime) {
+                $needsBuild = $false
+                Write-Host "  [OK] Build prod a jour (skip rebuild)" -ForegroundColor Green
+            }
+        }
+
+        if ($needsBuild) {
+            Write-Host "  Build prod (Next.js, ~15-25s)..." -ForegroundColor Yellow
+            Push-Location $frontendDir
+            $env:NEXT_PUBLIC_HUB_API_URL = if ($env:NEXT_PUBLIC_HUB_API_URL) { $env:NEXT_PUBLIC_HUB_API_URL } else { "http://localhost:8000" }
+            $buildOutput = & cmd /c "$nextCmd" build 2>&1
+            $buildExit = $LASTEXITCODE
+            Pop-Location
+            if ($buildExit -ne 0) {
+                Write-Host "  [X] Build prod echoue:" -ForegroundColor Red
+                $buildOutput | Select-Object -Last 15 | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkRed }
+                exit 1
+            }
+            Write-Host "  [OK] Build prod ok" -ForegroundColor Green
+        }
+
+        Write-Host "  Demarrage prod server (next start)..." -ForegroundColor Yellow
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$nextCmd`"", "start" -WorkingDirectory $frontendDir -WindowStyle Hidden
+
+        if (Wait-ForUrl "http://localhost:3000" 30 1) {
+            Write-Host "  [OK] Frontend prod ready" -ForegroundColor Green
             $frontendUp = $true
         } else {
             Write-Host "  [X] Frontend timeout. Verifie les logs." -ForegroundColor Red
