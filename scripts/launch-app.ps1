@@ -115,6 +115,17 @@ if (-not $frontendUp) {
     }
 
     if ($frontendDir) {
+        # Nettoie le cache .next si chunks orphelins (apres modifs majeures de composants).
+        # Sinon Next.js peut chercher un chunk renomme et retourner 500
+        # ("Cannot find module './XXX.js'"). Solution standard: clean + restart.
+        $nextCache = Join-Path $frontendDir ".next"
+        if (Test-Path $nextCache) {
+            $marker = Join-Path $nextCache "build-manifest.json"
+            if (-not (Test-Path $marker)) {
+                Write-Host "  [!] Cache .next invalide detecte, nettoyage..." -ForegroundColor Yellow
+                Remove-Item -Path $nextCache -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
         Write-Host "  Demarrage frontend depuis $frontendDir..." -ForegroundColor Yellow
 
         # Use next.cmd (Windows wrapper) via cmd.exe — direct node call doesn't work
