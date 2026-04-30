@@ -4,34 +4,22 @@ Audit complet réalisé 2026-04-30. Ce qui a été fixé ✅, ce qui reste à fa
 
 ---
 
-## 🚨 Action URGENTE (à faire MAINTENANT)
+## 🎯 Décision Marc 2026-04-30 : tout sur Drive (accepté)
 
-### 1. Régénérer le client_secret Google OAuth
+Marc a explicitement choisi de garder **tous les secrets sur Drive** — vault chiffré ET `.env` en clair. Préférence pratique > minimisation absolue du risque cloud-sync.
 
-**Pourquoi** : le `client_secret` (`GOCSPX-CBk3...`) a été écrit dans `hub-deploy/.env`. Ce fichier est gitignoré (bon) MAIS il vit sur **Google Drive** (`G:\Mon disque\...`) qui synchronise dans le cloud Google. Donc le secret a été uploadé sur les serveurs Drive — risque résiduel non-négligeable.
+**Ce qui reste sécurisé** :
+- ✅ `hub-secrets-vault.age` chiffré (Fernet via age key) — OK sur Drive
+- ✅ Clé privée age `C:\Users\dessin14\.hub-secrets\age-key.txt` — **JAMAIS sur Drive** (sinon vault déverrouillable)
+- ✅ Aucun secret en clair dans Git (toujours `.env*` + `*.age` gitignored)
 
-**Action** :
-1. Aller sur https://console.cloud.google.com/apis/credentials
-2. Cliquer sur ton OAuth 2.0 Client ID `327399868142-...`
-3. Bouton **"Reset secret"** (en haut)
-4. Confirmer
-5. Copier le nouveau secret
-6. Mettre à jour :
-   - `hub-secrets-vault.age` (vault chiffré OK pour Drive) — déchiffrer, modifier, re-chiffrer
-   - `hub-deploy/.env` côté ton autre PC quand tu déploieras
+**Ce qui transite Drive en clair** :
+- ⚠️ `hub-deploy/.env` : POSTGRES_PASSWORD, SECRET_KEY, GOOGLE_OAUTH_CLIENT_SECRET
+- Marc l'a accepté. Risque résiduel : si compte Google Drive compromis, secrets accessibles. Mitigation : compte Marc avec MFA + password fort.
 
-L'ancien secret est révoqué automatiquement, donc même s'il a fuité il devient inutilisable.
-
-### 2. Sortir `.env` de Google Drive
-
-Le `.env` actuel à `G:\...\hub-deploy\.env` contient passwords + secrets en clair. Drive le synchronise → secrets cloud-uploadés.
-
-**Solution recommandée** :
-- Déplacer ce fichier vers `C:\Users\dessin14\.hub-secrets\hub-deploy.env` (hors Drive)
-- Symbolic link OU `--env-file` flag dans docker-compose
-- Le fichier reste local, pas de sync cloud
-
-(Pour Phase 3 où tu déploies sur l'autre PC, créer le `.env` directement là, pas dans le Drive.)
+**Backup obligatoire** :
+- 🔒 La clé privée age — sans elle vault perdu si crash disque
+- → USB drive + password manager (1Password / Bitwarden / KeePass)
 
 ---
 
