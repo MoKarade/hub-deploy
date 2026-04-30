@@ -54,3 +54,4 @@ Thumbs.db
 
 # Vault age (chiffré OK mais on évite le commit accidentel)
 *.age
+*.enc

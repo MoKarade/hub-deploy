@@ -17,9 +17,17 @@ Marc a explicitement choisi de garder **tous les secrets sur Drive** — vault c
 - ⚠️ `hub-deploy/.env` : POSTGRES_PASSWORD, SECRET_KEY, GOOGLE_OAUTH_CLIENT_SECRET
 - Marc l'a accepté. Risque résiduel : si compte Google Drive compromis, secrets accessibles. Mitigation : compte Marc avec MFA + password fort.
 
-**Backup obligatoire** :
-- 🔒 La clé privée age — sans elle vault perdu si crash disque
-- → USB drive + password manager (1Password / Bitwarden / KeePass)
+**Backup de la clé privée age** :
+- 🔒 Sans elle, le vault `hub-secrets-vault.age` est inutilisable.
+- ✅ **Solution adoptée** : backup chiffré avec password sur Drive (`age-key-BACKUP.enc`)
+  - Algo : AES-256-CBC + PBKDF2 (1M iterations) + salt aléatoire (OpenSSL)
+  - Sync Drive auto → backup multi-PC
+  - Sans le password, le fichier est inutile
+- 📋 **Scripts** :
+  - Backup : `.\scripts\backup-age-key-to-drive.ps1`
+  - Restore : `.\scripts\restore-age-key-from-drive.ps1`
+- 🔑 **Where the password lives** : dans la tête de Marc + memory file local Claude (pas Git)
+- 💡 **Backup additionnel recommandé** : password manager (1Password / Bitwarden / KeePass) ou note papier en lieu sûr
 
 ---
 
