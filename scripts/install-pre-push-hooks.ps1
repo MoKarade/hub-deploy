@@ -33,25 +33,27 @@ foreach ($repoDir in $repoMap.Keys) {
     }
 
     # Hook bash (compatible Git for Windows + Git Bash)
-    $hookContent = @"
+    # Note: on capture l'exit code immediatement dans une var pour eviter
+    # toute erreur d'evaluation $?
+    $hookContent = @'
 #!/bin/sh
-# Auto-genere par install-pre-push-hooks.ps1.
-# Lance validate-all.ps1 -Repo $repoArg avant chaque push.
-# Bypass: git push --no-verify
+# Auto-genere par install-pre-push-hooks.ps1
+# Lance validate-all.ps1 avant chaque push. Bypass: git push --no-verify
 
 echo ""
-echo "[pre-push] Validation locale de $repoArg avant push..."
+echo "[pre-push] Validation locale avant push..."
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$validateScript" -Repo $repoArg
-if [ \$? -ne 0 ]; then
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "__VALIDATE_SCRIPT__" -Repo __REPO_ARG__
+RESULT=$?
+if [ "$RESULT" -ne 0 ]; then
     echo ""
-    echo "[pre-push] X Validation echouee. Fix les erreurs avant de pusher."
-    echo "[pre-push] Pour bypass (urgence uniquement): git push --no-verify"
+    echo "[pre-push] X Validation echouee (exit=$RESULT). Fix avant de pusher."
+    echo "[pre-push] Pour bypass urgent: git push --no-verify"
     exit 1
 fi
 echo "[pre-push] OK Push autorise."
 exit 0
-"@
+'@.Replace('__VALIDATE_SCRIPT__', $validateScript).Replace('__REPO_ARG__', $repoArg)
 
     # Écrire le hook (LF line endings pour bash sh)
     [System.IO.File]::WriteAllText($hookPath, $hookContent.Replace("`r`n", "`n"))
