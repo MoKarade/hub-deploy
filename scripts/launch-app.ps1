@@ -107,16 +107,17 @@ if (-not $frontendUp) {
 
     if ($frontendDir) {
         Write-Host "  Demarrage frontend depuis $frontendDir..." -ForegroundColor Yellow
-        $nodePath = (Get-Command node).Source
-        $nextPath = "$frontendDir\node_modules\next\dist\bin\next"
-        if (Test-Path $nextPath) {
-            Start-Process -FilePath $nodePath -ArgumentList $nextPath, "dev" -WorkingDirectory $frontendDir -WindowStyle Hidden
-        } else {
-            Write-Host "  [X] node_modules manquant dans $frontendDir. Lance 'npm install'." -ForegroundColor Red
+
+        # Use next.cmd (Windows wrapper) via cmd.exe — direct node call doesn't work
+        $nextCmd = "$frontendDir\node_modules\.bin\next.cmd"
+        if (-not (Test-Path $nextCmd)) {
+            Write-Host "  [X] node_modules manquant dans $frontendDir." -ForegroundColor Red
+            Write-Host "      Lance d'abord: cd $frontendDir; npm install --legacy-peer-deps" -ForegroundColor Yellow
             exit 1
         }
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$nextCmd`"", "dev" -WorkingDirectory $frontendDir -WindowStyle Hidden
 
-        Write-Host "  Attente du frontend..." -ForegroundColor Yellow
+        Write-Host "  Attente du frontend (compilation initiale ~10-20s)..." -ForegroundColor Yellow
         if (Wait-ForUrl "http://localhost:3000" 30 2) {
             Write-Host "  [OK] Frontend ready" -ForegroundColor Green
             $frontendUp = $true
