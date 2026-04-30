@@ -14,8 +14,13 @@ jobs:
 
       - name: Validate docker-compose
         run: |
-          # docker compose config valide la syntaxe + les references
+          # Le compose utilise ${VAR:?required} pour forcer la presence des
+          # secrets en prod. En CI on copie .env.example pour fournir des
+          # placeholders et valider la syntaxe.
+          cp .env.example .env
           docker compose -f docker-compose.dev.yml config > /dev/null
+          docker compose -f docker-compose.prod.yml config > /dev/null
+          rm .env
 
       - name: Lint Caddyfile
         run: |
