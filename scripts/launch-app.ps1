@@ -86,10 +86,19 @@ try {
     $r = Invoke-WebRequest -Uri "http://localhost:3000" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop
     if ($r.StatusCode -eq 200) {
         $frontendUp = $true
-        Write-Host "  [OK] Frontend deja actif" -ForegroundColor Green
+        Write-Host "  [OK] Frontend deja actif (pas de double lancement)" -ForegroundColor Green
     }
 } catch {
-    # not running
+    # not running, but check for orphan node processes that didn't bind to :3000
+    $orphans = Get-Process node -ErrorAction SilentlyContinue | Where-Object {
+        $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+        $cmdLine -match "next" -or $cmdLine -match "HubFrontend"
+    }
+    if ($orphans) {
+        Write-Host "  [!] Process node orphelins detectes, nettoyage..." -ForegroundColor Yellow
+        $orphans | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
 }
 
 if (-not $frontendUp) {
