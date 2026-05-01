@@ -70,19 +70,9 @@ $env:NEXT_PUBLIC_HUB_API_URL = $apiUrl
 Write-Host "  NEXT_PUBLIC_HUB_API_URL = $apiUrl (ecrit dans .env.production.local sans BOM)" -ForegroundColor DarkGray
 & "$nextCmd" build 2>&1 | Out-Null
 $buildExit = $LASTEXITCODE
-
-# VERIFICATION POST-BUILD : grep le bundle pour s'assurer que l'env est bake
-if ($buildExit -eq 0) {
-    $emailsBundle = Get-ChildItem "$frontendDir\.next\static\chunks\app\emails\page-*.js" -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($emailsBundle) {
-        $bundleContent = [System.IO.File]::ReadAllText($emailsBundle.FullName)
-        if ($bundleContent -notlike "*localhost:8000*") {
-            Write-Host "  [X] Build BUGGY : NEXT_PUBLIC_HUB_API_URL pas embarque dans le bundle !" -ForegroundColor Red
-            Write-Host "      Le frontend va 404 sur tous les calls API. Aborting." -ForegroundColor Red
-            $buildExit = 99
-        }
-    }
-}
+# Note : on n'a plus besoin de verifier le bake d'env var car api.ts utilise
+# maintenant getBaseUrl() runtime qui detecte window.location.hostname.
+# Plus de risque de bundle "/api" foireux.
 Pop-Location
 if ($buildExit -ne 0) {
     Write-Host "  [X] Build echoue, check 'cd $frontendDir; npm run build'" -ForegroundColor Red
