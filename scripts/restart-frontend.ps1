@@ -36,6 +36,13 @@ if (Test-Path $nextCache) {
     Remove-Item -Path $nextCache -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "  [OK] Cache .next/ wipe" -ForegroundColor Green
 }
+# CRUCIAL : wipe AUSSI les caches TypeScript + node_modules/.cache, sinon
+# TS incremental cache reuse l'ancienne compilation d'api.ts -> bundle obsolete.
+$tsCache = Join-Path $frontendDir "tsconfig.tsbuildinfo"
+if (Test-Path $tsCache) { Remove-Item $tsCache -Force -ErrorAction SilentlyContinue }
+$nmCache = Join-Path $frontendDir "node_modules\.cache"
+if (Test-Path $nmCache) { Remove-Item $nmCache -Recurse -Force -ErrorAction SilentlyContinue }
+Write-Host "  [OK] Cache TS + node_modules/.cache wipe" -ForegroundColor Green
 
 # Build prod + start (mode prod = stable)
 $nextCmd = "$frontendDir\node_modules\.bin\next.cmd"
