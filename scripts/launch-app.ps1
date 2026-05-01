@@ -22,6 +22,93 @@ function Wait-ForUrl($url, $maxRetries = 30, $delay = 2) {
     return $false
 }
 
+function Start-HubCoreNative {
+    # Demarre hub-core via uvicorn natif (mode SQLite local, pas de Docker requis).
+    # Utilise le venv .venv dans hub-core. Si absent, le cree avec uv.
+    $candidates = @(
+        "C:\HubCore",
+        "G:\Mon disque\PERSO & LOISIRS\AUTOMATISATION\Projets\Hub perso\hub-core"
+    )
+    $hubCoreDir = $null
+    foreach ($c in $candidates) {
+        if (Test-Path "$c\pyproject.toml") {
+            $hubCoreDir = $c
+            break
+        }
+    }
+    if (-not $hubCoreDir) {
+        Write-Host "  [X] hub-core introuvable" -ForegroundColor Red
+        return $false
+    }
+
+    # Setup venv si absent
+    $py = "$hubCoreDir\.venv\Scripts\python.exe"
+    if (-not (Test-Path $py)) {
+        Write-Host "  Setup venv hub-core (premier lancement)..." -ForegroundColor Yellow
+        Push-Location $hubCoreDir
+        & uv venv --python 3.13 2>&1 | Out-Null
+        & uv pip install -e ".[dev]" 2>&1 | Out-Null
+        Pop-Location
+    }
+
+    # Init SQLite si absent
+    if (-not (Test-Path "$hubCoreDir\hub.db") -and (Test-Path "$hubCoreDir\init_sqlite.py")) {
+        Write-Host "  Init SQLite DB..." -ForegroundColor Yellow
+        Push-Location $hubCoreDir
+        & $py init_sqlite.py 2>&1 | Out-Null
+        Pop-Location
+    }
+
+    # Lance uvicorn en background, log redirige vers fichier
+    $logFile = "$env:LOCALAPPDATA\hub-core.log"
+    $args = @("-m", "uvicorn", "src.main:app", "--port", "8000", "--host", "127.0.0.1")
+    Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $hubCoreDir `
+        -WindowStyle Hidden -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.err"
+
+    if (Wait-ForUrl "http://localhost:8000/v1/health" 20 1) {
+        Write-Host "  [OK] hub-core natif demarre (SQLite, log: $logFile)" -ForegroundColor Green
+        return $true
+    } else {
+        Write-Host "  [X] hub-core natif timeout. Check log: $logFile" -ForegroundColor Red
+        return $false
+    }
+}
+
+function Sync-DriveToCache {
+    # Auto-sync Drive (G:\) -> C:\HubFrontend si Drive est plus recent.
+    # Evite "j'ai edit sur Drive mais le launch utilise C:\ donc mes changes apparaissent pas"
+    $driveDir = "G:\Mon disque\PERSO & LOISIRS\AUTOMATISATION\Projets\Hub perso\hub-frontend"
+    $cacheDir = "C:\HubFrontend"
+    if (-not (Test-Path $driveDir) -or -not (Test-Path $cacheDir)) { return }
+
+    # Compare timestamps des fichiers source (app/, components/, lib/)
+    $driveLatest = Get-ChildItem -Path "$driveDir\app", "$driveDir\components", "$driveDir\lib" `
+        -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.tsx','.ts','.css') } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $cacheLatest = Get-ChildItem -Path "$cacheDir\app", "$cacheDir\components", "$cacheDir\lib" `
+        -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -in @('.tsx','.ts','.css') } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+    if ($driveLatest -and $cacheLatest -and $driveLatest.LastWriteTime -gt $cacheLatest.LastWriteTime) {
+        Write-Host "  Drive plus recent que C:\HubFrontend, sync en cours..." -ForegroundColor Yellow
+        # robocopy app/ components/ lib/ (skip node_modules + .next)
+        foreach ($d in @('app', 'components', 'lib', 'public', 'styles')) {
+            if (Test-Path "$driveDir\$d") {
+                & robocopy "$driveDir\$d" "$cacheDir\$d" /MIR /XD node_modules .next /NJH /NJS /NDL /NC /NS /NP 2>&1 | Out-Null
+            }
+        }
+        # Aussi les fichiers config racine importants
+        foreach ($f in @('package.json', 'tsconfig.json', 'next.config.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'middleware.ts')) {
+            if (Test-Path "$driveDir\$f") {
+                Copy-Item "$driveDir\$f" "$cacheDir\$f" -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-Host "  [OK] Sync Drive -> C:\HubFrontend complete" -ForegroundColor Green
+    }
+}
+
 Write-Host ""
 Write-Host "  ===========================================" -ForegroundColor Green
 Write-Host "    Personal Data Hub - Launch as App" -ForegroundColor Green
@@ -49,34 +136,48 @@ if (-not $ollamaProc) {
     Write-Host "  [OK] Ollama deja actif (PID: $($ollamaProc.Id))" -ForegroundColor Green
 }
 
-# 2. Demarrer Docker stack si Docker installe
+# 2. Demarrer hub-core (Docker stack si dispo, sinon uvicorn natif avec SQLite)
 Write-Host ""
-Write-Host "[*] Verification Docker..." -ForegroundColor Cyan
-if (Test-CommandExists "docker") {
-    $dockerInfo = docker info 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "  [OK] Docker en marche" -ForegroundColor Green
-        $hubCoreUp = docker ps --filter "name=hub-dev-hub-core" --format "{{.Names}}" 2>&1
-        if (-not $hubCoreUp) {
-            Write-Host "  Demarrage de la stack docker..." -ForegroundColor Yellow
+Write-Host "[*] Verification hub-core..." -ForegroundColor Cyan
+
+# D'abord check si hub-core repond deja
+$hubCoreAlreadyUp = $false
+try {
+    $r = Invoke-WebRequest "http://localhost:8000/v1/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+    if ($r.StatusCode -eq 200) {
+        Write-Host "  [OK] hub-core deja actif" -ForegroundColor Green
+        $hubCoreAlreadyUp = $true
+    }
+} catch {
+    # not running
+}
+
+if (-not $hubCoreAlreadyUp) {
+    if (Test-CommandExists "docker") {
+        $dockerInfo = docker info 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Docker dispo, stack Postgres..." -ForegroundColor Yellow
             Push-Location "$PSScriptRoot\.."
             docker compose -f docker-compose.dev.yml up -d 2>&1 | Out-Null
             Pop-Location
-            Write-Host "  Attente du healthcheck hub-core..." -ForegroundColor Yellow
             if (Wait-ForUrl "http://localhost:8000/v1/health" 30 2) {
-                Write-Host "  [OK] hub-core healthy" -ForegroundColor Green
+                Write-Host "  [OK] hub-core healthy (Docker, Postgres+pgvector)" -ForegroundColor Green
             } else {
-                Write-Host "  [!] hub-core ne repond pas. Verifie 'docker compose logs'" -ForegroundColor Yellow
+                Write-Host "  [!] hub-core Docker ne repond pas. Fallback natif..." -ForegroundColor Yellow
+                Start-HubCoreNative | Out-Null
             }
         } else {
-            Write-Host "  [OK] hub-core deja actif" -ForegroundColor Green
+            Write-Host "  Docker present mais arrete. Demarrage uvicorn natif..." -ForegroundColor Yellow
+            Start-HubCoreNative | Out-Null
         }
     } else {
-        Write-Host "  [!] Docker installe mais pas demarre. Lance Docker Desktop d'abord." -ForegroundColor Yellow
+        Write-Host "  Docker absent. Demarrage uvicorn natif (SQLite local)..." -ForegroundColor Yellow
+        Start-HubCoreNative | Out-Null
     }
-} else {
-    Write-Host "  [!] Docker pas installe. Frontend marchera sans hub-core." -ForegroundColor Yellow
 }
+
+# 2b. Auto-sync Drive -> C:\HubFrontend (frontend cache)
+Sync-DriveToCache
 
 # 3. Demarrer le frontend
 Write-Host ""
@@ -201,17 +302,67 @@ if (-not $browser) {
 }
 
 if ($browser) {
-    Start-Process -FilePath $browser -ArgumentList @(
+    # User-data-dir dedie : permet de tracker NOTRE process Chrome (pas celui de la session
+    # principale) -> on peut waiter sa fin et trigger le cleanup automatique.
+    $userDataDir = Join-Path $env:LOCALAPPDATA "HubPerso\chrome-profile"
+    if (-not (Test-Path $userDataDir)) {
+        New-Item -ItemType Directory -Path $userDataDir -Force | Out-Null
+    }
+
+    $chromeProc = Start-Process -FilePath $browser -ArgumentList @(
         "--app=http://localhost:3000",
         "--window-size=1400,900",
+        "--user-data-dir=$userDataDir",
         "--disable-features=TranslateUI",
         "--no-default-browser-check",
         "--no-first-run"
-    )
-    Write-Host "  [OK] Hub perso ouvert comme app !" -ForegroundColor Green
+    ) -PassThru
+    Write-Host "  [OK] Hub perso ouvert" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  Tu peux fermer ce terminal, l app reste ouverte." -ForegroundColor DarkGray
-    Write-Host "  Pour arreter le hub : .\scripts\stop_hub.ps1" -ForegroundColor DarkGray
+    Write-Host "  Quand tu fermes la fenetre, le hub s'arrete tout seul." -ForegroundColor DarkGray
+
+    # Attendre que l'user ferme Chrome, puis cleanup automatique
+    if ($chromeProc) {
+        try {
+            $chromeProc.WaitForExit()
+        } catch {
+            # Process deja termine ou inaccessible
+        }
+
+        Write-Host ""
+        Write-Host "[*] Chrome ferme - arret du hub..." -ForegroundColor Cyan
+
+        # Kill hub-core uvicorn natif
+        Get-Process python -ErrorAction SilentlyContinue | ForEach-Object {
+            $cl = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+            if ($cl -match "uvicorn.*src.main:app" -or $cl -match "hub-core") {
+                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Kill frontend Next.js
+        Get-Process node -ErrorAction SilentlyContinue | ForEach-Object {
+            $cl = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
+            if ($cl -match "next" -or $cl -match "HubFrontend" -or $cl -match "hub-frontend") {
+                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Stop Docker stack si elle tourne (mode Postgres)
+        if (Test-CommandExists "docker") {
+            $dockerInfo = docker info 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $running = docker ps --filter "name=hub-" --format "{{.Names}}" 2>&1
+                if ($running) {
+                    Push-Location "$PSScriptRoot\.."
+                    docker compose -f docker-compose.dev.yml down 2>&1 | Out-Null
+                    Pop-Location
+                }
+            }
+        }
+
+        Write-Host "[OK] Hub arrete proprement." -ForegroundColor Green
+    }
 } else {
     Write-Host "  [!] Chrome/Edge pas trouve. Ouvre manuellement http://localhost:3000" -ForegroundColor Yellow
     Start-Process "http://localhost:3000"

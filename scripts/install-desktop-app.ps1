@@ -78,16 +78,16 @@ if (Test-Path $iconPath) {
 $shortcut2.Save()
 Write-Host "  [OK] Entree menu Demarrer creee" -ForegroundColor Green
 
+# Cleanup d'anciennes icones Stop si elles existent (legacy)
+Remove-Item -Path (Join-Path $desktop "Hub perso - Stop.lnk") -Force -ErrorAction SilentlyContinue
+Remove-Item -Path (Join-Path $hubProgramsDir "Hub perso - Stop.lnk") -Force -ErrorAction SilentlyContinue
+
 Write-Host ""
 Write-Host "[*] Installation terminee !" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Tu peux maintenant :" -ForegroundColor White
-Write-Host "  - Double-cliquer sur Hub perso sur le bureau" -ForegroundColor DarkGray
-Write-Host "  - Ou chercher Hub perso dans le menu Demarrer" -ForegroundColor DarkGray
+Write-Host "  Une seule icone sur le bureau : 'Hub perso' (vert, H)" -ForegroundColor White
+Write-Host "  Click pour lancer. Ferme la fenetre pour tout arreter." -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  L app va :" -ForegroundColor White
-Write-Host "  1. Demarrer Ollama (si installe)" -ForegroundColor DarkGray
-Write-Host "  2. Demarrer Docker stack hub-core (si Docker installe)" -ForegroundColor DarkGray
-Write-Host "  3. Demarrer le frontend Next.js" -ForegroundColor DarkGray
-Write-Host "  4. Ouvrir Chrome en mode app standalone" -ForegroundColor DarkGray
+Write-Host "  Le 1er lancement prend ~1-2 min (setup venv + build frontend)" -ForegroundColor DarkGray
+Write-Host "  Les suivants : ~5-10 sec." -ForegroundColor DarkGray
 Write-Host ""
