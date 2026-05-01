@@ -46,7 +46,10 @@ if (-not (Test-Path $nextCmd)) {
 
 Write-Host "  Build prod (~15-25s)..." -ForegroundColor Yellow
 Push-Location $frontendDir
-& cmd /c "$nextCmd" build 2>&1 | Out-Null
+# CRUCIAL : set explicitement l'env var sinon Next.js bake "/api" par defaut
+# (sans hub-core proxy = 404 sur les requetes API depuis le bundle).
+$env:NEXT_PUBLIC_HUB_API_URL = if ($env:NEXT_PUBLIC_HUB_API_URL) { $env:NEXT_PUBLIC_HUB_API_URL } else { "http://localhost:8000" }
+& cmd /c "set NEXT_PUBLIC_HUB_API_URL=$env:NEXT_PUBLIC_HUB_API_URL && `"$nextCmd`" build" 2>&1 | Out-Null
 $buildExit = $LASTEXITCODE
 Pop-Location
 if ($buildExit -ne 0) {
