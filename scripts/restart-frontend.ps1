@@ -46,20 +46,13 @@ if (-not (Test-Path $nextCmd)) {
 
 Write-Host "  Build prod (~15-25s)..." -ForegroundColor Yellow
 Push-Location $frontendDir
-# CRUCIAL : Next.js bake les env NEXT_PUBLIC_* AU MOMENT DU BUILD.
-# Sans ca, BASE_URL = '/api' (fallback) -> 404 sur tous les calls API depuis le bundle.
-# Methode robuste : ecrire .env.production.local que Next.js lit automatiquement.
-$apiUrl = if ($env:NEXT_PUBLIC_HUB_API_URL) { $env:NEXT_PUBLIC_HUB_API_URL } else { "http://localhost:8000" }
-$mapsKey = if ($env:NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) { $env:NEXT_PUBLIC_GOOGLE_MAPS_API_KEY } else { "" }
-# Preserve les autres NEXT_PUBLIC_* qu'on aurait pu set (ex: maps key) en lisant .env.local existant
-$envProd = @()
-if (Test-Path "$frontendDir\.env.local") {
-    Get-Content "$frontendDir\.env.local" | Where-Object { $_ -match "^\s*NEXT_PUBLIC_" -and $_ -notmatch "NEXT_PUBLIC_HUB_API_URL" } | ForEach-Object { $envProd += $_ }
-}
-$envProd += "NEXT_PUBLIC_HUB_API_URL=$apiUrl"
-$envProd | Set-Content "$frontendDir\.env.production.local" -Encoding utf8
-Write-Host "  .env.production.local : NEXT_PUBLIC_HUB_API_URL=$apiUrl" -ForegroundColor DarkGray
-$env:NEXT_PUBLIC_HUB_API_URL = $apiUrl
+# CRUCIAL : Next.js bake les NEXT_PUBLIC_* AU BUILD. Set explicitement dans la
+# session PowerShell ; next.cmd herite via process env. Approche .env.production.local
+# foirait a cause du BOM ajoute par Set-Content -Encoding utf8 en PS5.
+$env:NEXT_PUBLIC_HUB_API_URL = if ($env:NEXT_PUBLIC_HUB_API_URL) { $env:NEXT_PUBLIC_HUB_API_URL } else { "http://localhost:8000" }
+# Cleanup d'un eventuel .env.production.local laisse par version precedente
+Remove-Item "$frontendDir\.env.production.local" -Force -ErrorAction SilentlyContinue
+Write-Host "  NEXT_PUBLIC_HUB_API_URL = $env:NEXT_PUBLIC_HUB_API_URL" -ForegroundColor DarkGray
 & "$nextCmd" build 2>&1 | Out-Null
 $buildExit = $LASTEXITCODE
 Pop-Location
