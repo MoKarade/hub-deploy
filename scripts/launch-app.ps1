@@ -76,6 +76,20 @@ function Start-HubCoreNative {
     }
 }
 
+function Start-HubCoreWatchdog {
+    # Spawn un watchdog en background qui auto-restart hub-core s'il crashe.
+    # Retourne le PID pour pouvoir le killer a la fermeture.
+    $watchdogScript = Join-Path $PSScriptRoot "hub-core-watchdog.ps1"
+    if (-not (Test-Path $watchdogScript)) {
+        return $null
+    }
+    $proc = Start-Process -FilePath "powershell.exe" `
+        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$watchdogScript`"") `
+        -WindowStyle Hidden -PassThru
+    Write-Host "  [OK] Watchdog hub-core demarre (PID $($proc.Id))" -ForegroundColor Green
+    return $proc.Id
+}
+
 function Sync-DriveToCache {
     # Auto-sync Drive (G:\) -> C:\HubFrontend si Drive est plus recent.
     # Evite "j'ai edit sur Drive mais le launch utilise C:\ donc mes changes apparaissent pas"
@@ -177,6 +191,9 @@ if (-not $hubCoreAlreadyUp) {
         Start-HubCoreNative | Out-Null
     }
 }
+
+# 2c. Demarre le watchdog qui auto-restart hub-core en cas de crash
+$watchdogPid = Start-HubCoreWatchdog
 
 # 2b. Auto-sync Drive -> C:\HubFrontend (frontend cache)
 Sync-DriveToCache
@@ -333,6 +350,11 @@ if ($browser) {
 
         Write-Host ""
         Write-Host "[*] Chrome ferme - arret du hub..." -ForegroundColor Cyan
+
+        # Kill watchdog en premier (sinon il va redemarrer hub-core qu'on essaie de tuer)
+        if ($watchdogPid) {
+            Stop-Process -Id $watchdogPid -Force -ErrorAction SilentlyContinue
+        }
 
         # Kill hub-core uvicorn natif
         Get-Process python -ErrorAction SilentlyContinue | ForEach-Object {
