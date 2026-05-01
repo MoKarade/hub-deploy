@@ -43,7 +43,9 @@ if (-not $domain -or -not $token) {
 $publicIp = $null
 foreach ($svc in @("https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com")) {
     try {
-        $publicIp = (Invoke-WebRequest -Uri $svc -UseBasicParsing -TimeoutSec 5).Content.Trim()
+        $resp = Invoke-WebRequest -Uri $svc -UseBasicParsing -TimeoutSec 5
+        $body = if ($resp.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($resp.Content) } else { [string]$resp.Content }
+        $publicIp = $body.Trim()
         if ($publicIp -match "^\d+\.\d+\.\d+\.\d+$") { break }
     } catch {
         $publicIp = $null
@@ -59,7 +61,10 @@ if (-not $publicIp) {
 $url = "https://www.duckdns.org/update?domains=$domain&token=$token&ip=$publicIp"
 try {
     $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 10
-    if ($r.Content.Trim() -eq "OK") {
+    # PowerShell 5.x retourne parfois Content en bytes - cast en string explicite
+    $body = if ($r.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($r.Content) } else { [string]$r.Content }
+    $body = $body.Trim()
+    if ($body -eq "OK") {
         $now = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         Write-Host "[OK] $now -> $domain.duckdns.org = $publicIp" -ForegroundColor Green
 
@@ -72,7 +77,7 @@ try {
         }
         exit 0
     } else {
-        Write-Host "[X] DuckDNS a renvoye: $($r.Content)" -ForegroundColor Red
+        Write-Host "[X] DuckDNS a renvoye: $body" -ForegroundColor Red
         exit 1
     }
 } catch {

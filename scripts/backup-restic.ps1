@@ -45,10 +45,23 @@ if (-not $env:RESTIC_PASSWORD -or -not $env:RESTIC_REPOSITORY) {
     exit 1
 }
 
-if (-not (Get-Command restic -ErrorAction SilentlyContinue)) {
+# Cherche restic dans PATH ou dans les emplacements connus
+$resticBin = (Get-Command restic -ErrorAction SilentlyContinue).Source
+if (-not $resticBin) {
+    foreach ($p in @(
+        "C:\ProgramData\restic\restic.exe",
+        "C:\Program Files\restic\restic.exe",
+        "$env:LOCALAPPDATA\Programs\restic\restic.exe"
+    )) {
+        if (Test-Path $p) { $resticBin = $p; break }
+    }
+}
+if (-not $resticBin) {
     Write-Host "[X] restic pas installe. Lance: winget install restic.restic" -ForegroundColor Red
+    Write-Host "    Ou telecharge le binaire depuis https://github.com/restic/restic/releases" -ForegroundColor Yellow
     exit 1
 }
+Set-Alias restic $resticBin -Scope Script
 
 # === MODES ===
 

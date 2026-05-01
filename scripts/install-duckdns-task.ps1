@@ -13,10 +13,11 @@ if (-not (Test-Path $scriptPath)) {
     exit 1
 }
 
-# Trigger : toutes les 5 minutes, indefiniment
+# Trigger : toutes les 5 minutes, sur 10 ans (max permis par Task Scheduler)
+# [System.TimeSpan]::MaxValue est rejete par le Task Scheduler XML schema
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
     -RepetitionInterval (New-TimeSpan -Minutes 5) `
-    -RepetitionDuration ([System.TimeSpan]::MaxValue)
+    -RepetitionDuration (New-TimeSpan -Days 3650)
 
 # Action : powershell.exe -File update-duckdns.ps1
 $action = New-ScheduledTaskAction `
