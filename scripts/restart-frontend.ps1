@@ -46,15 +46,43 @@ if (-not (Test-Path $nextCmd)) {
 
 Write-Host "  Build prod (~15-25s)..." -ForegroundColor Yellow
 Push-Location $frontendDir
-# CRUCIAL : Next.js bake les NEXT_PUBLIC_* AU BUILD. Set explicitement dans la
-# session PowerShell ; next.cmd herite via process env. Approche .env.production.local
-# foirait a cause du BOM ajoute par Set-Content -Encoding utf8 en PS5.
-$env:NEXT_PUBLIC_HUB_API_URL = if ($env:NEXT_PUBLIC_HUB_API_URL) { $env:NEXT_PUBLIC_HUB_API_URL } else { "http://localhost:8000" }
-# Cleanup d'un eventuel .env.production.local laisse par version precedente
-Remove-Item "$frontendDir\.env.production.local" -Force -ErrorAction SilentlyContinue
-Write-Host "  NEXT_PUBLIC_HUB_API_URL = $env:NEXT_PUBLIC_HUB_API_URL" -ForegroundColor DarkGray
+# CRUCIAL : Next.js bake les NEXT_PUBLIC_* AU BUILD.
+# Approche definitive : on ECRASE .env.production.local en UTF-8 SANS BOM
+# (Set-Content -Encoding utf8 en PS5 ajoute un BOM que dotenv-loader ignore).
+# Cette methode marche meme si l'env PowerShell n'est pas heritee correctement.
+$apiUrl = if ($env:NEXT_PUBLIC_HUB_API_URL) { $env:NEXT_PUBLIC_HUB_API_URL } else { "http://localhost:8000" }
+$mapsKey = ""
+if (Test-Path "$frontendDir\.env.local") {
+    $localContent = [System.IO.File]::ReadAllText("$frontendDir\.env.local")
+    if ($localContent -match "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY\s*=\s*(\S+)") {
+        $mapsKey = $matches[1].Trim()
+    }
+}
+$envContent = "NEXT_PUBLIC_HUB_API_URL=$apiUrl`n"
+if ($mapsKey) { $envContent += "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$mapsKey`n" }
+# Ecrit SANS BOM (le PS5 default ajoute BOM avec Set-Content -Encoding utf8)
+[System.IO.File]::WriteAllText(
+    "$frontendDir\.env.production.local",
+    $envContent,
+    (New-Object System.Text.UTF8Encoding $false)
+)
+$env:NEXT_PUBLIC_HUB_API_URL = $apiUrl
+Write-Host "  NEXT_PUBLIC_HUB_API_URL = $apiUrl (ecrit dans .env.production.local sans BOM)" -ForegroundColor DarkGray
 & "$nextCmd" build 2>&1 | Out-Null
 $buildExit = $LASTEXITCODE
+
+# VERIFICATION POST-BUILD : grep le bundle pour s'assurer que l'env est bake
+if ($buildExit -eq 0) {
+    $emailsBundle = Get-ChildItem "$frontendDir\.next\static\chunks\app\emails\page-*.js" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($emailsBundle) {
+        $bundleContent = [System.IO.File]::ReadAllText($emailsBundle.FullName)
+        if ($bundleContent -notlike "*localhost:8000*") {
+            Write-Host "  [X] Build BUGGY : NEXT_PUBLIC_HUB_API_URL pas embarque dans le bundle !" -ForegroundColor Red
+            Write-Host "      Le frontend va 404 sur tous les calls API. Aborting." -ForegroundColor Red
+            $buildExit = 99
+        }
+    }
+}
 Pop-Location
 if ($buildExit -ne 0) {
     Write-Host "  [X] Build echoue, check 'cd $frontendDir; npm run build'" -ForegroundColor Red
