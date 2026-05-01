@@ -51,9 +51,11 @@ function Start-HubCoreNative {
         Pop-Location
     }
 
-    # Init SQLite si absent
-    if (-not (Test-Path "$hubCoreDir\hub.db") -and (Test-Path "$hubCoreDir\init_sqlite.py")) {
-        Write-Host "  Init SQLite DB..." -ForegroundColor Yellow
+    # Init/migrate SQLite a CHAQUE lancement (idempotent : create_all + auto_migrate
+    # qui ALTER TABLE ADD COLUMN pour les colonnes manquantes des modeles).
+    # Evite les crashes "no such column: photos.X" quand on pull une nouvelle version.
+    if (Test-Path "$hubCoreDir\init_sqlite.py") {
+        Write-Host "  Migrate SQLite DB..." -ForegroundColor Yellow
         Push-Location $hubCoreDir
         & $py init_sqlite.py 2>&1 | Out-Null
         Pop-Location
