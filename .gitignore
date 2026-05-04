@@ -1,6 +1,15 @@
 # ============================================================================
 # Secrets — JAMAIS commit en clair
 # ============================================================================
+#
+# IMPORTANT : .gitignore ne protege QUE Git. Comme ce repo vit dans
+# G:\Mon disque\ (Google Drive sync), les .env sont uploades vers Google
+# meme s'ils ne sont pas commit. Solution :
+#   - Garder les vrais .env hors de Drive : $env:USERPROFILE\.hub-secrets\
+#   - Creer un symlink dans le repo qui pointe vers le vrai fichier
+#   - Voir : hub-deploy/scripts/migrate-env-out-of-drive.ps1
+#           hub-deploy/docs/SECRETS-OUT-OF-DRIVE.md
+#
 
 # .env (contient mots de passe Postgres + tokens)
 .env

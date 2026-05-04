@@ -69,7 +69,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8000:8000"
+      # Bind 127.0.0.1 (pas 0.0.0.0) — hub-core dev ne doit jamais être accessible
+      # depuis le LAN (pas d'auth en dev). En prod, Caddy reverse-proxy via réseau Docker.
+      - "127.0.0.1:8000:8000"
     # Bind mount du code source pour avoir hot-reload en dev sans rebuild de l'image.
     # Permet de coder/itérer rapidement : on modifie un .py côté Windows, uvicorn redémarre tout seul.
     volumes:

@@ -20,11 +20,13 @@ $ErrorActionPreference = "Stop"
 # Charge .env (si present)
 $envFile = Join-Path $PSScriptRoot "..\.env"
 if (Test-Path $envFile) {
+    # Note : on utilise $envMatch (pas $matches qui est une variable
+    # automatique de PowerShell, ecrasee par chaque -match).
     Get-Content $envFile | Where-Object { $_ -match "^\s*([A-Z_]+)\s*=\s*(.+)\s*$" } | ForEach-Object {
-        $matches = [regex]::Match($_, "^\s*([A-Z_]+)\s*=\s*(.+?)\s*$")
-        if ($matches.Success) {
-            $key = $matches.Groups[1].Value
-            $val = $matches.Groups[2].Value.Trim('"').Trim("'")
+        $envMatch = [regex]::Match($_, "^\s*([A-Z_]+)\s*=\s*(.+?)\s*$")
+        if ($envMatch.Success) {
+            $key = $envMatch.Groups[1].Value
+            $val = $envMatch.Groups[2].Value.Trim('"').Trim("'")
             Set-Item -Path "Env:$key" -Value $val -ErrorAction SilentlyContinue
         }
     }

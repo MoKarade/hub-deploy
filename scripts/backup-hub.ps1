@@ -100,7 +100,16 @@ if ($dockerExists) {
         $pgUser = ($envContent | Select-String "POSTGRES_USER=").Line -replace ".*=", ""
         $pgDb = ($envContent | Select-String "POSTGRES_DB=").Line -replace ".*=", ""
         $dumpPath = "$tempDumpDir\postgres-dump.sql"
-        & docker exec hub-dev-postgres-1 pg_dump -U $pgUser -d $pgDb 2>&1 > $dumpPath
+        # Separe stdout (le SQL pur) de stderr (logs/erreurs). Sans cette
+        # separation, des warnings de pg_dump finissent dans le .sql et
+        # corrompent le restore.
+        $errFile = "$tempDumpDir\pg_dump.err"
+        $stderr = & docker exec hub-dev-postgres-1 pg_dump -U $pgUser -d $pgDb 2>$errFile 1>$dumpPath
+        if ($LASTEXITCODE -ne 0) {
+            $errContent = if (Test-Path $errFile) { Get-Content $errFile -Raw } else { "(no stderr)" }
+            throw "pg_dump a echoue (exit=$LASTEXITCODE): $errContent"
+        }
+        Remove-Item $errFile -Force -ErrorAction SilentlyContinue
         if (Test-Path $dumpPath) {
             $size = (Get-Item $dumpPath).Length
             if (-not $Quiet) { Write-Host "  [OK] Dump $([math]::Round($size/1KB)) KB" -ForegroundColor Green }

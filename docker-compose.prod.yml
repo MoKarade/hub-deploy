@@ -110,7 +110,12 @@ services:
     depends_on:
       caddy:
         condition: service_started
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?required}
+    command: tunnel --no-autoupdate run
+    # Le token est passé via env var (TUNNEL_TOKEN, lue nativement par cloudflared)
+    # plutôt qu'en CLI arg. Évite d'exposer le token via `docker inspect` ou
+    # les logs du daemon Docker.
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?required}
     # Le tunnel forward vers caddy:80 selon la config définie côté dashboard
     # Cloudflare Zero Trust > Networks > Tunnels.
 

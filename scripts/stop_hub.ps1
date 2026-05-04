@@ -26,27 +26,30 @@ if (Test-CommandExists "docker") {
     }
 }
 
-# 2. Arreter uvicorn natif (hub-core)
+# 2. Arreter uvicorn natif (hub-core). Filtre strict : on cible uniquement
+# les python du venv hub-core ou dont la CommandLine reference hub-core.
+# Evite de tuer un python d'un autre projet sur la machine.
 $killedHubCore = 0
-Get-Process python -ErrorAction SilentlyContinue | ForEach-Object {
-    $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-    if ($cmdLine -match "uvicorn.*src.main:app" -or $cmdLine -match "hub-core") {
-        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-        $killedHubCore++
-    }
+Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue | Where-Object {
+    $_.CommandLine -match "uvicorn" -and $_.CommandLine -match "src\.main:app" -and
+    ($_.ExecutablePath -like "*\hub-core\.venv\*" -or $_.CommandLine -like "*hub-core*")
+} | ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    $killedHubCore++
 }
 if ($killedHubCore -gt 0) {
     Write-Host "  [OK] $killedHubCore process hub-core (uvicorn natif) tues" -ForegroundColor Green
 }
 
-# 3. Arreter frontend Next.js (process node lies a HubFrontend / .next)
+# 3. Arreter frontend Next.js. Filtre strict : "next" + dossier hub-frontend.
+# Evite de tuer un autre node sur la machine.
 $killedFront = 0
-Get-Process node -ErrorAction SilentlyContinue | ForEach-Object {
-    $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-    if ($cmdLine -match "next" -or $cmdLine -match "HubFrontend" -or $cmdLine -match "hub-frontend") {
-        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-        $killedFront++
-    }
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | Where-Object {
+    $_.CommandLine -match "next" -and
+    ($_.CommandLine -like "*HubFrontend*" -or $_.CommandLine -like "*hub-frontend*")
+} | ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    $killedFront++
 }
 if ($killedFront -gt 0) {
     Write-Host "  [OK] $killedFront process frontend (Next.js) tues" -ForegroundColor Green

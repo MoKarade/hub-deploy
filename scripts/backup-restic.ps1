@@ -29,11 +29,13 @@ $ErrorActionPreference = "Stop"
 # Charge .env
 $envFile = Join-Path $PSScriptRoot "..\.env"
 if (Test-Path $envFile) {
+    # Note : on utilise $envMatch (pas $matches qui est une variable
+    # automatique de PowerShell, ecrasee par chaque -match).
     Get-Content $envFile | Where-Object { $_ -match "^\s*([A-Z_]+)\s*=\s*(.+)\s*$" } | ForEach-Object {
-        $matches = [regex]::Match($_, "^\s*([A-Z_]+)\s*=\s*(.+?)\s*$")
-        if ($matches.Success) {
-            $key = $matches.Groups[1].Value
-            $val = $matches.Groups[2].Value.Trim('"').Trim("'")
+        $envMatch = [regex]::Match($_, "^\s*([A-Z_]+)\s*=\s*(.+?)\s*$")
+        if ($envMatch.Success) {
+            $key = $envMatch.Groups[1].Value
+            $val = $envMatch.Groups[2].Value.Trim('"').Trim("'")
             Set-Item -Path "Env:$key" -Value $val -ErrorAction SilentlyContinue
         }
     }
@@ -135,24 +137,33 @@ Write-Host "    Paths : $($paths -join ', ')" -ForegroundColor DarkGray
 Write-Host "    Repo  : $env:RESTIC_REPOSITORY" -ForegroundColor DarkGray
 Write-Host ""
 
-# Si la stack Postgres tourne, dump la DB d'abord (pg_dump dans hub-core volume)
+# Si la stack Postgres tourne, dump la DB d'abord (pg_dump dans hub-core volume).
+# On utilise le format custom (-F c) : binaire compresse natif (zstd/zlib),
+# pas besoin de gzip externe (qui n'existe pas par defaut sur Windows).
+# Restore avec : pg_restore -U hub -d hubdb < hubdb-XXX.dump
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     $dbContainer = docker ps --filter "name=hub-dev-postgres" --format "{{.Names}}" 2>&1 | Select-Object -First 1
     if ($dbContainer) {
         $dumpDir = Join-Path $env:LOCALAPPDATA "hub-db-dumps"
         New-Item -ItemType Directory -Path $dumpDir -Force | Out-Null
-        $dumpFile = Join-Path $dumpDir "hubdb-$(Get-Date -Format 'yyyyMMdd-HHmmss').sql.gz"
-        Write-Host "  Dump Postgres (hub-core)..." -ForegroundColor Yellow
-        docker exec $dbContainer pg_dump -U hub hubdb 2>&1 | Out-File -Encoding utf8 $dumpFile.Replace(".gz", "")
-        # Compress en gz si disponible (on skip si pas de gzip)
-        if (Get-Command gzip -ErrorAction SilentlyContinue) {
-            & gzip -f $dumpFile.Replace(".gz", "")
+        $dumpFile = Join-Path $dumpDir "hubdb-$(Get-Date -Format 'yyyyMMdd-HHmmss').dump"
+        Write-Host "  Dump Postgres (hub-core, format custom)..." -ForegroundColor Yellow
+        # -F c = format custom binaire (compression native, restorable via pg_restore)
+        # Le redirect en bytes via cmd /c evite que PowerShell encode en UTF-16.
+        docker exec $dbContainer pg_dump -U hub -d hubdb -F c -f /tmp/hubdb.dump 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            docker cp "${dbContainer}:/tmp/hubdb.dump" $dumpFile 2>&1 | Out-Null
+            docker exec $dbContainer rm /tmp/hubdb.dump 2>&1 | Out-Null
         }
         # Garde 7 derniers dumps
-        Get-ChildItem $dumpDir -Filter "hubdb-*.sql*" | Sort-Object LastWriteTime -Descending |
+        Get-ChildItem $dumpDir -Filter "hubdb-*.dump" | Sort-Object LastWriteTime -Descending |
             Select-Object -Skip 7 | Remove-Item -Force -ErrorAction SilentlyContinue
         $paths += $dumpDir
-        Write-Host "  [OK] DB dumpee : $dumpFile" -ForegroundColor Green
+        if (Test-Path $dumpFile) {
+            Write-Host "  [OK] DB dumpee : $dumpFile (restore: pg_restore -U hub -d hubdb < $dumpFile)" -ForegroundColor Green
+        } else {
+            Write-Host "  [!] Dump Postgres echoue (skip)" -ForegroundColor Yellow
+        }
     }
 }
 

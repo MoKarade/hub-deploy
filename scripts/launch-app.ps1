@@ -62,9 +62,11 @@ function Start-HubCoreNative {
     }
 
     # Lance uvicorn en background, log redirige vers fichier
+    # Note : on utilise $cmdArgs (pas $args qui est reserve par PowerShell pour
+    # les arguments du script lui-meme).
     $logFile = "$env:LOCALAPPDATA\hub-core.log"
-    $args = @("-m", "uvicorn", "src.main:app", "--port", "8000", "--host", "127.0.0.1")
-    Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $hubCoreDir `
+    $cmdArgs = @("-m", "uvicorn", "src.main:app", "--port", "8000", "--host", "127.0.0.1")
+    Start-Process -FilePath $py -ArgumentList $cmdArgs -WorkingDirectory $hubCoreDir `
         -WindowStyle Hidden -RedirectStandardOutput $logFile -RedirectStandardError "$logFile.err"
 
     if (Wait-ForUrl "http://localhost:8000/v1/health" 20 1) {
@@ -209,14 +211,16 @@ try {
         Write-Host "  [OK] Frontend deja actif (pas de double lancement)" -ForegroundColor Green
     }
 } catch {
-    # not running, but check for orphan node processes that didn't bind to :3000
-    $orphans = Get-Process node -ErrorAction SilentlyContinue | Where-Object {
-        $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-        $cmdLine -match "next" -or $cmdLine -match "HubFrontend"
+    # not running, but check for orphan node processes that didn't bind to :3000.
+    # On filtre strictement : il faut "next" ET ("HubFrontend" OU "hub-frontend")
+    # pour eviter de tuer un node d'un autre projet sur la machine.
+    $orphans = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -match "next" -and
+        ($_.CommandLine -like "*HubFrontend*" -or $_.CommandLine -like "*hub-frontend*")
     }
     if ($orphans) {
         Write-Host "  [!] Process node orphelins detectes, nettoyage..." -ForegroundColor Yellow
-        $orphans | Stop-Process -Force -ErrorAction SilentlyContinue
+        $orphans | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         Start-Sleep -Seconds 2
     }
 }
@@ -356,20 +360,23 @@ if ($browser) {
             Stop-Process -Id $watchdogPid -Force -ErrorAction SilentlyContinue
         }
 
-        # Kill hub-core uvicorn natif
-        Get-Process python -ErrorAction SilentlyContinue | ForEach-Object {
-            $cl = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-            if ($cl -match "uvicorn.*src.main:app" -or $cl -match "hub-core") {
-                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-            }
+        # Kill hub-core uvicorn natif. Filtre strict : on cherche les python
+        # appartenant au venv hub-core OU dont la CommandLine reference hub-core.
+        # Evite de tuer un python d'un autre projet (ex: jupyter, autres apps).
+        Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -match "uvicorn" -and $_.CommandLine -match "src\.main:app" -and
+            ($_.ExecutablePath -like "*\hub-core\.venv\*" -or $_.CommandLine -like "*hub-core*")
+        } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }
 
-        # Kill frontend Next.js
-        Get-Process node -ErrorAction SilentlyContinue | ForEach-Object {
-            $cl = (Get-CimInstance Win32_Process -Filter "ProcessId = $($_.Id)" -ErrorAction SilentlyContinue).CommandLine
-            if ($cl -match "next" -or $cl -match "HubFrontend" -or $cl -match "hub-frontend") {
-                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-            }
+        # Kill frontend Next.js. Filtre strict : il faut "next" ET un dossier
+        # frontend hub. Evite de tuer un autre node sur la machine.
+        Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -match "next" -and
+            ($_.CommandLine -like "*HubFrontend*" -or $_.CommandLine -like "*hub-frontend*")
+        } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }
 
         # Stop Docker stack si elle tourne (mode Postgres)
