@@ -118,7 +118,7 @@ function Sync-DriveToCache {
             }
         }
         # Aussi les fichiers config racine importants
-        foreach ($f in @('package.json', 'tsconfig.json', 'next.config.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'middleware.ts')) {
+        foreach ($f in @('package.json', 'tsconfig.json', 'next.config.mjs', 'next.config.ts', 'tailwind.config.ts', 'postcss.config.mjs', 'middleware.ts')) {
             if (Test-Path "$driveDir\$f") {
                 Copy-Item "$driveDir\$f" "$cacheDir\$f" -Force -ErrorAction SilentlyContinue
             }

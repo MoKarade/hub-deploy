@@ -45,6 +45,13 @@ if (Test-Path $nmCache) { Remove-Item $nmCache -Recurse -Force -ErrorAction Sile
 Write-Host "  [OK] Cache TS + node_modules/.cache wipe" -ForegroundColor Green
 
 # Build prod + start (mode prod = stable)
+# Sync next.config.mjs depuis Drive si on tourne depuis C:\HubFrontend
+$driveConfig = "G:\Mon disque\PERSO & LOISIRS\AUTOMATISATION\Projets\Hub perso\hub-frontend\next.config.mjs"
+$localConfig = "$frontendDir\next.config.mjs"
+if ((Test-Path $driveConfig) -and ($frontendDir -ne (Split-Path $driveConfig -Parent))) {
+    Copy-Item $driveConfig $localConfig -Force -ErrorAction SilentlyContinue
+}
+
 $nextCmd = "$frontendDir\node_modules\.bin\next.cmd"
 if (-not (Test-Path $nextCmd)) {
     Write-Host "  [X] node_modules manquant - lance npm install --legacy-peer-deps" -ForegroundColor Red
