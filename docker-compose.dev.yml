@@ -78,6 +78,8 @@ services:
       - ../hub-core/src:/app/src
       - ../hub-core/alembic:/app/alembic
       - ../hub-core/alembic.ini:/app/alembic.ini
+      # Read-only access a l'inbox pour POST /v1/locations/ingest-file
+      - ../inbox:/var/hub/inbox:ro
     command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/v1/health"]
