@@ -18,7 +18,7 @@
 # le chiffrement. Le master password n'est ecrit nulle part dans le code.
 
 param(
-    [string]$Output = "$env:USERPROFILE\Downloads\hub-secrets-bundle.zip",
+    [string]$Output = "$env:USERPROFILE\Downloads\hub-secrets-bundle.7z",
     [switch]$SkipDb,
     [switch]$IncludeDb
 )
@@ -111,14 +111,32 @@ if (-not $sevenZip) {
 # Cleanup output existant
 if (Test-Path $Output) { Remove-Item $Output -Force }
 
-# Zip avec password (AES-256, headers chiffres, mode -mhe)
+# Staging dir avec arborescence (sinon 7z refuse les .env doublons)
+$staging = "$env:TEMP\hub-secrets-staging-$(Get-Random)"
+New-Item -ItemType Directory -Force -Path $staging | Out-Null
+
+foreach ($f in $existing) {
+    # Reconstruit la structure relative au root
+    $rel = $f.Substring($root.Length + 1)  # ex: "hub-core\.env"
+    $dest = Join-Path $staging $rel
+    $destDir = Split-Path -Parent $dest
+    if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+    Copy-Item $f $dest -Force
+}
+
+# Zip le staging avec password (AES-256, headers chiffres -mhe)
 Write-Host ""
 Write-Host "Creation du bundle chiffre..." -ForegroundColor Cyan
-$args = @("a", "-tzip", "-p$pwdPlain", "-mem=AES256", $Output) + $existing
-$null = & $sevenZip $args 2>&1
+Push-Location $staging
+$null = & $sevenZip a -t7z "-p$pwdPlain" "-mhe=on" "-mx=5" $Output "*" 2>&1
+$sevenZipExit = $LASTEXITCODE
+Pop-Location
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: 7zip failed (exit $LASTEXITCODE)" -ForegroundColor Red
+# Cleanup staging meme en cas d'erreur
+Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue
+
+if ($sevenZipExit -ne 0) {
+    Write-Host "ERROR: 7zip failed (exit $sevenZipExit)" -ForegroundColor Red
     exit 1
 }
 

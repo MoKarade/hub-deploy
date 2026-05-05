@@ -79,56 +79,41 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Cherche les fichiers extraits (peuvent etre dans un sous-dossier qui reflete le path original)
+# Cherche tous les fichiers extraits, en preservant l'arborescence relative
 $found = Get-ChildItem -Path $tempDir -Recurse -File
 
 Write-Host ""
 Write-Host "Fichiers extraits :" -ForegroundColor Green
-foreach ($f in $found) { Write-Host "  - $($f.Name)" }
-
-# Mapping : nom de fichier -> destination
-$mapping = @{
-    ".env"            = $null   # ambigu (3 fichiers .env potentiels)
-    ".env.local"      = "$root\hub-frontend\.env.local"
-    "age-key-BACKUP.enc" = "$root\age-key-BACKUP.enc"
-    "hub.db"          = "$root\hub-core\hub.db"
+foreach ($f in $found) {
+    $rel = $f.FullName.Substring($tempDir.Length + 1)
+    Write-Host "  - $rel"
 }
 
 Write-Host ""
 Write-Host "Restauration..." -ForegroundColor Cyan
 
-# Pour les .env, on regarde le contenu pour deviner si c'est hub-core ou hub-deploy
+# Pour chaque fichier extrait, on reconstitue le path destination
+# en joignant root + chemin relatif depuis le staging zip
 foreach ($f in $found) {
-    $name = $f.Name
-    $dest = $null
+    $rel = $f.FullName.Substring($tempDir.Length + 1)  # ex: "hub-core\.env"
+    $dest = Join-Path $root $rel
 
-    if ($name -eq ".env") {
-        $content = Get-Content $f.FullName -Raw
-        if ($content -match "POSTGRES_USER|CLOUDFLARE_TUNNEL|DUCKDNS") {
-            $dest = "$root\hub-deploy\.env"
-        } elseif ($content -match "DATABASE_URL|OLLAMA_BASE_URL") {
-            $dest = "$root\hub-core\.env"
-        } else {
-            Write-Host "  ! .env ambigu, skip ($($f.FullName))" -ForegroundColor Yellow
-            continue
-        }
-    } elseif ($mapping.ContainsKey($name)) {
-        $dest = $mapping[$name]
+    $destDir = Split-Path -Parent $dest
+    if (-not (Test-Path $destDir)) {
+        Write-Host "  ! Dossier parent absent, skip : $dest" -ForegroundColor Yellow
+        Write-Host "    (clone d'abord les repos GitHub)" -ForegroundColor DarkYellow
+        continue
     }
 
-    if ($dest) {
-        # Backup l'existant
-        if (Test-Path $dest) {
-            $backup = "$dest.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-            Copy-Item $dest $backup
-            Write-Host "  ~ backup : $backup" -ForegroundColor DarkGray
-        }
-        Copy-Item $f.FullName $dest -Force
-        $size = [math]::Round((Get-Item $dest).Length / 1KB, 1)
-        Write-Host "  + $dest ($size KB)" -ForegroundColor Green
-    } else {
-        Write-Host "  ? $name (destination inconnue)" -ForegroundColor Yellow
+    # Backup l'existant
+    if (Test-Path $dest) {
+        $backup = "$dest.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Copy-Item $dest $backup
+        Write-Host "  ~ backup : $backup" -ForegroundColor DarkGray
     }
+    Copy-Item $f.FullName $dest -Force
+    $size = [math]::Round((Get-Item $dest).Length / 1KB, 1)
+    Write-Host "  + $dest ($size KB)" -ForegroundColor Green
 }
 
 # Cleanup
