@@ -18,10 +18,14 @@
 # le chiffrement. Le master password n'est ecrit nulle part dans le code.
 
 param(
-    [string]$Output = "$env:USERPROFILE\Downloads\hub-secrets-bundle.7z",
+    [string]$Output = "G:\Mon disque\PERSO & LOISIRS\AUTOMATISATION\Projets\Hub perso\_transfer\hub-secrets-bundle.7z",
     [switch]$SkipDb,
     [switch]$IncludeDb
 )
+
+# Cree le dossier _transfer dans Drive si inexistant (synced auto entre les 2 PCs)
+$outputDir = Split-Path -Parent $Output
+if (-not (Test-Path $outputDir)) { New-Item -ItemType Directory -Force -Path $outputDir | Out-Null }
 
 $ErrorActionPreference = "Stop"
 $root = "G:\Mon disque\PERSO & LOISIRS\AUTOMATISATION\Projets\Hub perso"
