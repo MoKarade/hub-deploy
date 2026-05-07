@@ -10,7 +10,7 @@
 creation_rules:
   - path_regex: secrets/.*\.enc\.yaml$
     age: >-
-      REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+      age1mtjlcmczkx680w62g9t3hgpxcvxk880hv4t58k8j9msvxlkhwfpslt2pl6
     # Format de la clé : `age1...` obtenu via `age-keygen -y ~/.age/hub.key`.
     # Si tu colles ici une vraie clé, c'est OK : la pubkey est volontairement
     # publique. Seule la privée doit rester secrète.

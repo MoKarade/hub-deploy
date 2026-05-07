@@ -51,6 +51,7 @@ if (-not $env:RESTIC_PASSWORD -or -not $env:RESTIC_REPOSITORY) {
 $resticBin = (Get-Command restic -ErrorAction SilentlyContinue).Source
 if (-not $resticBin) {
     foreach ($p in @(
+        "C:\hub\.tools\restic\restic.exe",
         "C:\ProgramData\restic\restic.exe",
         "C:\Program Files\restic\restic.exe",
         "$env:LOCALAPPDATA\Programs\restic\restic.exe"
